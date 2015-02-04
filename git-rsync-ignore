@@ -1,0 +1,84 @@
+#!/usr/bin/env ruby
+
+module Msg
+  def self.usage          ; "Usage: git-rsync-ignore SOURCE DESTINATION" end
+
+  def self.e_no_source    ; "Error: Source does not exist.\n" << self.usage end
+  def self.e_bad_source   ; "Error: Source is not a directory.\n" << self.usage end
+  def self.e_no_dest      ; "Error: Destination does not exist.\n" << self.usage end
+  def self.e_bad_dest     ; "Error: Destination is not a directory.\n" << self.usage end
+  def self.e_no_git       ; "Error: Source is not a git repository.\n" << self.usage end
+  def self.e_no_gitignore ; "Error: No .gitignore in source directory.\n" << self.usage end
+  def self.e_user_quit    ; "User quit." end
+
+  def self.c_bad_y_n      ; "Please enter y or n" end
+  def self.c_no_excludes  ; "No exclusions found. Continue? [y/n]" end
+end
+
+class Call
+  attr_reader :command, :output, :status, :success
+
+  def initialize(command = nil)
+    exec(command) if command
+  end
+
+  def exec(command)
+    @command = command
+    @output = %x{#{command} 2>&1}
+    @status = $?.exitstatus
+    @success = @status == 0
+  end
+
+  def self.exec(command)
+    Call.new(command)
+  end
+end
+
+def stop(why)
+  puts why
+  exit(1)
+end
+
+def confirm(what)
+  print what << ' ';
+  puts Msg.c_bad_y_n until %W(y n).include?(input = STDIN.gets[0].downcase)
+  input == 'y'
+end
+
+def parse_args(argv)
+  stop(Msg.usage) unless argv[0] and argv[1]
+
+  source = File.expand_path(argv[0])
+  dest   = File.expand_path(argv[1])
+
+  stop(Msg.e_no_source)  unless File.exist?(source)
+  stop(Msg.e_bad_source) unless File.directory?(source)
+  stop(Msg.e_no_dest)    unless File.exist?(dest)
+  stop(Msg.e_bad_dest)   unless File.directory?(dest)
+
+  call = Call.exec("cd #{source}; git rev-parse --show-toplevel")
+  stop(Msg.e_no_git) unless call.success
+
+  source = call.output.chomp
+  stop(Msg.e_no_gitignore) unless File.exist?(File.join(source, '.gitignore'))
+
+  return File.join(source, ''), File.join(dest, '')
+end
+
+def run(argv)
+  source, dest = parse_args(argv)
+
+  excludes = File.read(File.join(source, '.gitignore'))
+    .split("\n").reject{ |l| l =~ /\s*#/ || l == "" }
+  stop(Msg.e_user_quit) unless excludes.length > 0 || confirm(Msg.c_no_excludes)
+
+  command = 'rsync -trvl --delete-after '
+  excludes.each do |exclude|
+    command << '--exclude="' << exclude << '" '
+  end
+  command << source << ' ' << dest
+
+  puts Call.exec(command).output
+end
+
+run(ARGV)
