@@ -69,7 +69,7 @@ def run(argv)
   source, dest = parse_args(argv)
 
   excludes = File.read(File.join(source, '.gitignore'))
-    .split("\n").reject{ |l| l =~ /\s*#/ || l == "" }
+    .split("\n").reject{ |l| l =~ /^\s*#/ || l == "" }
   stop(Msg.e_user_quit) unless excludes.length > 0 || confirm(Msg.c_no_excludes)
 
   command = 'rsync -trvl --delete-after '
