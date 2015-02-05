@@ -1,18 +1,32 @@
 #!/usr/bin/env ruby
 
 module Msg
-  def self.usage          ; "Usage: git-rsync-ignore SOURCE DESTINATION" end
+  def self.usage ; "Usage: git-rsync-ignore [OPTIONS] SOURCE DESTINATION" end
 
-  def self.e_no_source    ; "Error: Source does not exist.\n" << self.usage end
-  def self.e_bad_source   ; "Error: Source is not a directory.\n" << self.usage end
-  def self.e_no_dest      ; "Error: Destination does not exist.\n" << self.usage end
-  def self.e_bad_dest     ; "Error: Destination is not a directory.\n" << self.usage end
-  def self.e_no_git       ; "Error: Source is not a git repository.\n" << self.usage end
-  def self.e_no_gitignore ; "Error: No .gitignore in source directory.\n" << self.usage end
-  def self.e_user_quit    ; "User quit." end
+  def self.description(options)
+    string = self.usage << "\n\n" <<
+    "       rsyncs a git repo to another destination while obeying .gitignore\n" <<
+    "       SOURCE can be any directory within a git repository\n" <<
+    "       DESTINATION must be a directory\n\n"
+    options.each do |option|
+      string << "       #{option[:arg]}    #{option[:description]}\n"
+    end
+    string
+  end
 
-  def self.c_bad_y_n      ; "Please enter y or n" end
-  def self.c_no_excludes  ; "No exclusions found. Continue? [y/n]" end
+  def self.e_unknown_opt(opt) ; "Error: Unknown option: #{opt}\n" << self.usage end
+  def self.e_no_source        ; "Error: Source does not exist.\n" << self.usage end
+  def self.e_bad_source       ; "Error: Source is not a directory.\n" << self.usage end
+  def self.e_no_dest          ; "Error: Destination does not exist.\n" << self.usage end
+  def self.e_bad_dest         ; "Error: Destination is not a directory.\n" << self.usage end
+  def self.e_no_git           ; "Error: Source is not a git repository.\n" << self.usage end
+  def self.e_source_dest      ; "Error: Source and Destination are the same!\n" <<
+                                "       Why would you do this?!\n" << self.usage end
+  def self.e_no_gitignore     ; "Error: No .gitignore in source directory.\n" << self.usage end
+  def self.e_user_quit        ; "Bye!" end
+
+  def self.c_bad_y_n          ; "Please enter y or n" end
+  def self.c_no_excludes      ; "No exclusions found. Continue?" end
 end
 
 class Call
@@ -40,16 +54,27 @@ def stop(why)
 end
 
 def confirm(what)
-  print what << ' ';
+  print what << ' [y/n] ';
   puts Msg.c_bad_y_n until %W(y n).include?(input = STDIN.gets[0].downcase)
   input == 'y'
 end
 
-def parse_args(argv)
-  stop(Msg.usage) unless argv[0] and argv[1]
+def options
+  [
+    { arg: '-h', description: 'prints this message' },
+    { arg: '-g', description: 'also syncs .git directory' }
+  ]
+end
 
-  source = File.expand_path(argv[0])
-  dest   = File.expand_path(argv[1])
+def parse_args(argv)
+  stop(Msg.description(options)) if argv.find{ |arg| arg =~ /^-?[h\?]$/ }
+  stop(Msg.usage) if argv.length < 2
+
+  dest       = File.expand_path(argv.pop)
+  source     = File.expand_path(argv.pop)
+  exlude_git = argv.delete('-g')
+
+  stop(Msg.e_unknown_opt(argv.first)) unless argv.empty?
 
   stop(Msg.e_no_source)  unless File.exist?(source)
   stop(Msg.e_bad_source) unless File.directory?(source)
@@ -58,19 +83,24 @@ def parse_args(argv)
 
   call = Call.exec("cd #{source}; git rev-parse --show-toplevel")
   stop(Msg.e_no_git) unless call.success
-
   source = call.output.chomp
+
+  source = File.join(source, '')
+  dest   = File.join(dest, '')
+
+  stop(Msg.e_source_dest) if source == dest
   stop(Msg.e_no_gitignore) unless File.exist?(File.join(source, '.gitignore'))
 
-  return File.join(source, ''), File.join(dest, '')
+  return source, dest, exlude_git
 end
 
 def run(argv)
-  source, dest = parse_args(argv)
+  source, dest, exclude_git = parse_args(argv)
 
   excludes = File.read(File.join(source, '.gitignore'))
     .split("\n").reject{ |l| l =~ /^\s*#/ || l == "" }
   stop(Msg.e_user_quit) unless excludes.length > 0 || confirm(Msg.c_no_excludes)
+  excludes << '.git' if exclude_git
 
   command = 'rsync -trvl --delete-after '
   excludes.each do |exclude|
