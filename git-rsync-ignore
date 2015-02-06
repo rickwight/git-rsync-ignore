@@ -97,8 +97,10 @@ end
 def run(argv)
   source, dest, include_git = parse_args(argv)
 
-  excludes = File.read(File.join(source, '.gitignore'))
-    .split("\n").reject{ |l| l =~ /^\s*#/ || l == "" }
+  excludes = File.read(File.join(source, '.gitignore')).split("\n")
+    .reject{ |l| l =~ /^\s*#/ || l == "" }
+    .map{ |l| l =~ /^([^#]+)#/ ? $1.strip : l.strip }
+
   stop(Msg.e_user_quit) unless excludes.length > 0 || confirm(Msg.c_no_excludes)
   excludes << '.git' unless include_git
 
