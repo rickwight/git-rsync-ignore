@@ -70,9 +70,9 @@ def parse_args(argv)
   stop(Msg.description(options)) if argv.find{ |arg| arg =~ /^-?[h\?]$/ }
   stop(Msg.usage) if argv.length < 2
 
-  dest       = File.expand_path(argv.pop)
-  source     = File.expand_path(argv.pop)
-  exlude_git = argv.delete('-g')
+  dest        = File.expand_path(argv.pop)
+  source      = File.expand_path(argv.pop)
+  include_git = !!argv.delete('-g')
 
   stop(Msg.e_unknown_opt(argv.first)) unless argv.empty?
 
@@ -91,16 +91,16 @@ def parse_args(argv)
   stop(Msg.e_source_dest) if source == dest
   stop(Msg.e_no_gitignore) unless File.exist?(File.join(source, '.gitignore'))
 
-  return source, dest, exlude_git
+  return source, dest, include_git
 end
 
 def run(argv)
-  source, dest, exclude_git = parse_args(argv)
+  source, dest, include_git = parse_args(argv)
 
   excludes = File.read(File.join(source, '.gitignore'))
     .split("\n").reject{ |l| l =~ /^\s*#/ || l == "" }
   stop(Msg.e_user_quit) unless excludes.length > 0 || confirm(Msg.c_no_excludes)
-  excludes << '.git' if exclude_git
+  excludes << '.git' unless include_git
 
   command = 'rsync -trvl --delete-after '
   excludes.each do |exclude|
